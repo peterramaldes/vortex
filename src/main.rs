@@ -1,13 +1,17 @@
+use anyhow::{bail, Context};
 use serde::{Deserialize, Serialize};
-use std::{io::StdoutLock, u64};
+use std::{
+    io::{StdoutLock, Write},
+    u64,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
     /// Identification of the node that this message come from
-    src: String,
+    src: Option<String>,
 
     /// Identification of the node that this message is to
-    dest: String,
+    dest: Option<String>,
 
     /// The payload of the message
     body: Body,
@@ -29,8 +33,17 @@ pub struct Body {
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
 pub enum Payload {
-    Echo { echo: String },
-    EchoOk { echo: String },
+    Init {
+        node_id: String,
+        node_ids: Vec<String>,
+    },
+    InitOk {},
+    Echo {
+        echo: String,
+    },
+    EchoOk {
+        echo: String,
+    },
 }
 
 pub struct Node {
@@ -38,14 +51,27 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn reply(
-        &mut self,
-        input: Message,
-        stdout: &mut serde_json::Serializer<StdoutLock>,
-    ) -> anyhow::Result<()> {
+    pub fn reply(&mut self, input: Message, stdout: &mut StdoutLock) -> anyhow::Result<()> {
         match input.body.payload {
+            Payload::Init { .. } => {
+                let msg = Message {
+                    src: input.dest,
+                    dest: input.src,
+                    body: Body {
+                        id: Some(self.id),
+                        in_reply_to: input.body.id,
+                        payload: Payload::InitOk {},
+                    },
+                };
+
+                serde_json::to_writer(&mut *stdout, &msg).context("serialize response to init")?;
+                stdout.write_all(b"\n").context("write trailing newline")?;
+                // println(stdout, &msg)?;
+
+                self.id += 1;
+            }
             Payload::Echo { echo } => {
-                let reply = Message {
+                let msg = Message {
                     src: input.dest,
                     dest: input.src,
                     body: Body {
@@ -55,29 +81,34 @@ impl Node {
                     },
                 };
 
-                reply.serialize(stdout)?;
+                serde_json::to_writer(&mut *stdout, &msg).context("serialize response to init")?;
+                stdout.write_all(b"\n").context("write trailing newline")?;
+                // println(stdout, &msg)?;
 
                 self.id += 1;
             }
-            Payload::EchoOk { echo: _ } => todo!(),
+            Payload::InitOk { .. } => bail!("we doesn't expect InitOk back"),
+            Payload::EchoOk { .. } => {}
         }
 
         Ok(())
     }
 }
 
+pub fn println(stdout: &mut StdoutLock, msg: &Message) -> anyhow::Result<()> {
+    Ok(())
+}
+
 fn main() -> anyhow::Result<()> {
     let stdin = std::io::stdin().lock();
-    let inputs = serde_json::Deserializer::from_reader(stdin).into_iter::<Message>();
-
-    let stdout = std::io::stdout().lock();
-    let mut output = serde_json::Serializer::new(stdout);
+    let mut stdout = std::io::stdout().lock();
 
     let mut state = Node { id: 0 };
 
+    let inputs = serde_json::Deserializer::from_reader(stdin).into_iter::<Message>();
     for input in inputs {
         let input = input?;
-        state.reply(input, &mut output)?
+        state.reply(input, &mut stdout)?
     }
 
     Ok(())
