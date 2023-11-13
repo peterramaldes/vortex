@@ -66,7 +66,6 @@ impl Node {
 
                 serde_json::to_writer(&mut *stdout, &msg).context("serialize response to init")?;
                 stdout.write_all(b"\n").context("write trailing newline")?;
-                // println(stdout, &msg)?;
 
                 self.id += 1;
             }
@@ -83,7 +82,6 @@ impl Node {
 
                 serde_json::to_writer(&mut *stdout, &msg).context("serialize response to init")?;
                 stdout.write_all(b"\n").context("write trailing newline")?;
-                // println(stdout, &msg)?;
 
                 self.id += 1;
             }
@@ -95,20 +93,16 @@ impl Node {
     }
 }
 
-pub fn println(stdout: &mut StdoutLock, msg: &Message) -> anyhow::Result<()> {
-    Ok(())
-}
-
 fn main() -> anyhow::Result<()> {
     let stdin = std::io::stdin().lock();
     let mut stdout = std::io::stdout().lock();
 
-    let mut state = Node { id: 0 };
+    let mut node = Node { id: 0 };
 
     let inputs = serde_json::Deserializer::from_reader(stdin).into_iter::<Message>();
     for input in inputs {
         let input = input?;
-        state.reply(input, &mut stdout)?
+        node.reply(input, &mut stdout)?
     }
 
     Ok(())
